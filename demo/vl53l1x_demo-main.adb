@@ -24,8 +24,6 @@ procedure VL53L1X_Demo.Main is
      (Sensor  : in out VL53L1X.VL53L1X_Ranging_Sensor;
       Address :        HAL.I2C.I2C_Address := 16#52#);
 
-   procedure Exercise_Sensor (Sensor : in out VL53L1X.VL53L1X_Ranging_Sensor);
-
    --  (a) only one sensor can have a given I2C address, which
    --  initializes to 16#52#. Start off with all but one shut down,
    --  configure it to the required address, then do the rest one by
@@ -115,75 +113,6 @@ procedure VL53L1X_Demo.Main is
       pragma Assert (Status, "couldn't set timings");
    end Setup_Sensor;
 
-   procedure Exercise_Sensor (Sensor : in out VL53L1X.VL53L1X_Ranging_Sensor)
-   is
-      Status : Boolean;
-   begin
-      VL53L1X.Start_Ranging (Sensor, Status);
-      pragma Assert (Status, "didn't start ranging");
-
-      declare
-         Budget   : Natural;
-         Interval : Natural;
-      begin
-         VL53L1X.Get_Timings
-           (Sensor,
-            Measurement_Budget_Ms   => Budget,
-            Between_Measurements_Ms => Interval,
-            Status                  => Status);
-         pragma Assert (Status, "couldn't get the timings");
-         Semihosting.Log_Line
-           ("timing budget:" & Budget'Image & ", interval:" & Interval'Image);
-      end;
-
-      declare
-         Start : Ada.Real_Time.Time;
-         use type Ada.Real_Time.Time;
-         use type Ada.Real_Time.Time_Span;
-      begin
-         Semihosting.Log_Line ("started ranging");
-         for J in 1 .. 10 loop
-            Start := Ada.Real_Time.Clock;
-            delay until
-              Ada.Real_Time.Clock + Ada.Real_Time.Milliseconds (500);
-            declare
-               Distance : Natural;
-               Valid : Boolean;
-               Ranging_Status : VL53L1X.Ranging_Status;
-            begin
-               declare
-                  Ready : Boolean;
-               begin
-                  loop
-                     VL53L1X.Is_Measurement_Ready (Sensor, Ready, Status);
-                     pragma Assert (Status, "didn't get measurement-ready");
-                     exit when Ready;
-                  end loop;
-               end;
-
-               VL53L1X.Get_Measurement
-                 (Sensor, Distance, Valid, Ranging_Status);
-               pragma Assert (Status, "didn't get measurement");
-
-               VL53L1X.Clear_Interrupt (Sensor, Status);
-               pragma Assert (Status, "didn't clear interrupt");
-
-               Semihosting.Log_Line
-                 ("distance:" & (if Valid
-                                 then Distance'Image
-                                 else " ---")
-                    & ", r.status: " & Ranging_Status'Image
-                    & ", interval (ms):" &
-                    Integer'Image
-                      ((Ada.Real_Time.Clock - Start)
-                         / Ada.Real_Time.Milliseconds (1)));
-            end;
-         end loop;
-
-         Semihosting.Log_Line ("stopping ranging");
-      end;
-   end Exercise_Sensor;
-
 begin
    Semihosting.Log_Line ("vl53l1x_demo");
 
@@ -201,18 +130,80 @@ begin
    Enable_Polulu;
    Setup_Sensor (Polulu, Address => 16#54#);
 
-   Semihosting.Log_Line ("exercising the breakouts");
-   for J in 1 .. 10 loop
-      Semihosting.Log_Line ("exercising the Pimoroni breakout");
-      Exercise_Sensor (Pimoroni);
-      Semihosting.Log_Line ("exercising the Polulu breakout");
-      Exercise_Sensor (Polulu);
-   end loop;
+   Exercise : declare
+      use type Ada.Real_Time.Time;
+      Stop_Time : constant Ada.Real_Time.Time
+        := Ada.Real_Time.Clock + Ada.Real_Time.Seconds (20);
+      Status : Boolean;
+   begin
+      VL53L1X.Start_Ranging (Pimoroni, Status);
+      pragma Assert (Status, "pimoroni didn't start ranging");
+      VL53L1X.Start_Ranging (Polulu, Status);
+      pragma Assert (Status, "polulu didn't start ranging");
+
+      loop
+         exit when Ada.Real_Time.Clock >= Stop_Time;
+         declare
+            Breakout_Available : Data_Available;
+            Status : Boolean;
+            Ready : Boolean;
+            Distance : Natural;
+            Valid : Boolean;
+            Ranging_Status : VL53L1X.Ranging_Status;
+         begin
+            Wait_For_Data_Available (Breakout_Available);
+            if Breakout_Available (On_Pimoroni) then
+               Semihosting.Log_Line ("pimoroni data");
+               VL53L1X.Is_Measurement_Ready (Pimoroni, Ready, Status);
+               pragma Assert (Status, "didn't get measurement-ready");
+
+               if not Ready then
+                  Semihosting.Log_Line ("not ready");
+               else
+                  VL53L1X.Get_Measurement
+                    (Pimoroni, Distance, Valid, Ranging_Status);
+
+                  VL53L1X.Clear_Interrupt (Pimoroni, Status);
+                  pragma Assert (Status, "didn't clear interrupt");
+
+                  Semihosting.Log_Line
+                    ("distance:" & (if Valid
+                                    then Distance'Image
+                                    else " ---")
+                       & ", r.status: " & Ranging_Status'Image);
+               end if;
+            end if;
+            if Breakout_Available (On_Polulu) then
+               Semihosting.Log_Line ("polulu data");
+               VL53L1X.Is_Measurement_Ready (Polulu, Ready, Status);
+               pragma Assert (Status, "didn't get measurement-ready");
+
+               if not Ready then
+                  Semihosting.Log_Line ("not ready");
+               else
+                  VL53L1X.Get_Measurement
+                    (Polulu, Distance, Valid, Ranging_Status);
+
+                  VL53L1X.Clear_Interrupt (Polulu, Status);
+                  pragma Assert (Status, "didn't clear interrupt");
+
+                  Semihosting.Log_Line
+                    ("distance:" & (if Valid
+                                    then Distance'Image
+                                    else " ---")
+                       & ", r.status: " & Ranging_Status'Image);
+               end if;
+            end if;
+         end;
+      end loop;
+   end Exercise;
 
    Semihosting.Log_Line ("stopping the exercise & resetting the breakouts");
    declare
       Status : Boolean;
    begin
+      VL53L1X.Stop_Ranging (Pimoroni, Status);
+      VL53L1X.Stop_Ranging (Polulu, Status);
       VL53L1X.Set_Device_Address (Pimoroni, 16#52#, Status);
       VL53L1X.Set_Device_Address (Polulu, 16#52#, Status);
       --  Now we can restart the program without having to power cycle
