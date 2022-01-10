@@ -1,0 +1,48 @@
+with "Ada_Drivers_Library/ada_drivers_library.gpr";
+
+library project VL53L1X_Lib extends "runtime.gpr" is
+
+   for Languages use ("ada", "c");
+   for Create_Missing_Dirs use "true";
+   for Object_Dir use ".build-lib";
+   for Library_Dir use "lib";
+   for Library_Kind use "static";
+   for Library_Name use "vl53l1x";
+
+   type BUILD_TYPE is
+      ("Debug", "Production");
+   Build : BUILD_Type := external ("BUILD", "Debug");
+
+   For Source_Dirs use
+     (
+      project'Project_Dir & "/" & "src",
+      project'Project_Dir & "/" & "ada",
+      project'Project_Dir & "/" & "core",
+      project'Project_Dir & "/" & "platform"
+     );
+
+   Defaults := ("-ffunction-sections", "-fdata-sections");
+   case Build is
+      when "Debug" =>
+         Defaults := Defaults & ("-g", "-O0");
+      when "Production" =>
+         Defaults := Defaults & ("-O2");
+   end case;
+
+   package Compiler is
+      for Default_Switches ("ada") use
+        Defaults &
+        (
+         "-gnatqQafy",
+         "-gnatwa",
+         "-gnatw.X"
+        );
+      for Default_Switches ("c") use
+        Defaults &
+        (
+         "-I" & "core",
+         "-I" & "platform"
+        );
+   end Compiler;
+
+end VL53L1X_Lib;

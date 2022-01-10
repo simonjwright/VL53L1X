@@ -21,6 +21,7 @@ If you don't want to use the device's interrupt-generating feature, you can do a
 Other controls provided are:
 
 * `Set_Device_Address` allows to change the I2C address from the default (`16#52#`). This is useful if you have more than one VL53L1X connected: disable all the devices' I2C communications by clearing their XSHUT pins, then enable them one-by-one setting distinct addresses.
+  **N.B.** the device address remains as set until power is cycled!
 * `Set_Distance_Mode`: the choices are `Long` (default) and `Short`. `Short` mode has better ambient light immunity but the maximum distance measurable is limited to 1.3 m. `Long` distance mode ranges up to 4 m but is less performant under ambient light.
 * `Set_Timings`.
   * `Measurement_Budget_Ms` (20 to 1_000 ms, default 100 ms) is the time allowed to make one measurement: longer times provide increased measurement precision at the expense of increased power consumption.
@@ -30,6 +31,4 @@ Further controls are available to be implemented, in particular controlling the 
 
 ## Exceptions ##
 
-Exceptions are raised for I2C errors, largely on the grounds that it's not obvious how to recover from them.
-
-This extends to failure of `Boot_Device` to connect, possibly because of using the wrong I2C address. This is an undesirable behaviour (aka bug) which will be corrected.
+Except in `Boot_Device`, exceptions are raised for I2C errors, largely on the grounds that it's not obvious how to recover from them.

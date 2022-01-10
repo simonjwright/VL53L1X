@@ -46,6 +46,76 @@ with Interfaces.C;
 
 package body VL53L1X is
 
+   package Registers is
+      pragma Style_Checks (Off);
+
+      --  These values are copied from those derived from vl53l1x_api.h,
+      --  except that the encoding of the C double-underscore as "_u_"
+      --  has been replaced by a single underscore.
+
+      VL53L1X_IMPLEMENTATION_VER_MAJOR : constant := 3;
+      VL53L1X_IMPLEMENTATION_VER_MINOR : constant := 5;
+      VL53L1X_IMPLEMENTATION_VER_SUB : constant := 1;
+      VL53L1X_IMPLEMENTATION_VER_REVISION : constant := 8#000#;
+
+      SOFT_RESET : constant := 16#0000#;
+      VL53L1_I2C_SLAVE_DEVICE_ADDRESS : constant := 16#0001#;
+      VL53L1_VHV_CONFIG_TIMEOUT_MACROP_LOOP_BOUND : constant := 16#0008#;
+      ALGO_CROSSTALK_COMPENSATION_PLANE_OFFSET_KCPS : constant := 16#0016#;
+      ALGO_CROSSTALK_COMPENSATION_X_PLANE_GRADIENT_KCPS : constant := 16#0018#;
+      ALGO_CROSSTALK_COMPENSATION_Y_PLANE_GRADIENT_KCPS : constant := 16#001A#;
+      ALGO_PART_TO_PART_RANGE_OFFSET_MM : constant := 16#001E#;
+      MM_CONFIG_INNER_OFFSET_MM : constant := 16#0020#;
+      MM_CONFIG_OUTER_OFFSET_MM : constant := 16#0022#;
+      GPIO_HV_MUX_CTRL : constant := 16#0030#;
+      GPIO_TIO_HV_STATUS : constant := 16#0031#;
+      SYSTEM_INTERRUPT_CONFIG_GPIO : constant := 16#0046#;
+      PHASECAL_CONFIG_TIMEOUT_MACROP : constant := 16#004B#;
+      RANGE_CONFIG_TIMEOUT_MACROP_A_HI : constant := 16#005E#;
+      RANGE_CONFIG_VCSEL_PERIOD_A : constant := 16#0060#;
+      RANGE_CONFIG_VCSEL_PERIOD_B : constant := 16#0063#;
+      RANGE_CONFIG_TIMEOUT_MACROP_B_HI : constant := 16#0061#;
+      RANGE_CONFIG_TIMEOUT_MACROP_B_LO : constant := 16#0062#;
+      RANGE_CONFIG_SIGMA_THRESH : constant := 16#0064#;
+      RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT_MCPS : constant := 16#0066#;
+      RANGE_CONFIG_VALID_PHASE_HIGH : constant := 16#0069#;
+      VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD : constant := 16#006C#;
+      SYSTEM_THRESH_HIGH : constant := 16#0072#;
+      SYSTEM_THRESH_LOW : constant := 16#0074#;
+      SD_CONFIG_WOI_SD0 : constant := 16#0078#;
+      SD_CONFIG_INITIAL_PHASE_SD0 : constant := 16#007A#;
+      ROI_CONFIG_USER_ROI_CENTRE_SPAD : constant := 16#007F#;
+      ROI_CONFIG_USER_ROI_REQUESTED_GLOBAL_XY_SIZE : constant := 16#0080#;
+      SYSTEM_SEQUENCE_CONFIG : constant := 16#0081#;
+      VL53L1_SYSTEM_GROUPED_PARAMETER_HOLD : constant := 16#0082#;
+      SYSTEM_INTERRUPT_CLEAR : constant := 16#0086#;
+      SYSTEM_MODE_START : constant := 16#0087#;
+      VL53L1_RESULT_RANGE_STATUS : constant := 16#0089#;
+      VL53L1_RESULT_DSS_ACTUAL_EFFECTIVE_SPADS_SD0 : constant := 16#008C#;
+      RESULT_AMBIENT_COUNT_RATE_MCPS_SD : constant := 16#0090#;
+      VL53L1_RESULT_FINAL_CROSSTALK_CORRECTED_RANGE_MM_SD0 : constant := 16#0096#;
+      VL53L1_RESULT_PEAK_SIGNAL_COUNT_RATE_CROSSTALK_CORRECTED_MCPS_SD0 : constant := 16#0098#;
+      VL53L1_RESULT_OSC_CALIBRATE_VAL : constant := 16#00DE#;
+      VL53L1_FIRMWARE_SYSTEM_STATUS : constant := 16#00E5#;
+      VL53L1_IDENTIFICATION_MODEL_ID : constant := 16#010F#;
+      VL53L1_ROI_CONFIG_MODE_ROI_CENTRE_SPAD : constant := 16#013E#;
+
+      pragma Style_Checks (On);
+   end Registers;
+   use Registers;
+
+   --  The VL53L1X is a big-endian device. Register addresses are two
+   --  bytes wide. The data is mainly (arrays of) single bytes, but
+   --  some is two bytes wide, some 4.
+
+   subtype Two_Byte_Array is HAL.UInt8_Array (1 .. 2);
+   function To_Device (Value : HAL.UInt16) return Two_Byte_Array;
+   function From_Device (Value : Two_Byte_Array) return HAL.UInt16;
+
+   subtype Four_Byte_Array is HAL.UInt8_Array (1 .. 4);
+   function To_Device (Value : HAL.UInt32) return Four_Byte_Array;
+   function From_Device (Value : Four_Byte_Array) return HAL.UInt32;
+
    --  In all cases (aside from e.g. VL53L1X_SetDistanceMode(), where
    --  it's an out-of-bounds error that won't happen in Ada) the
    --  return value of the API function merely indicates an I2C
@@ -55,8 +125,6 @@ package body VL53L1X is
    --  I'm retaining the low-level (I2C) status because the API
    --  functions use it.
 
-   pragma Warnings (Off, "useless assignment to ""Status""");
-
    -----------------
    -- Boot_Device --
    -----------------
@@ -64,33 +132,58 @@ package body VL53L1X is
    procedure Boot_Device
      (This             : in out VL53L1X_Ranging_Sensor;
       Loop_Interval_Ms :        Positive := 10;
-      Status           :    out Boolean)
+      Status           :    out Boot_Status)
    is
       function Convert is new Ada.Unchecked_Conversion
         (System.Address, vl53l1_platform_h.VL53L1_DEV);
       State : aliased sys_ustdint_h.uint8_t := 0;
       use type sys_ustdint_h.uint8_t;
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
+      I2C_Status : HAL.I2C.I2C_Status;
+      use all type HAL.I2C.I2C_Status;
    begin
-      Status := False;
       --  The C code thinks that VL53L1_DEV is a pointer to <something>,
       --  but it never tries to access any component of it.
       This.Dev := Convert (This'Address);
 
       --  Allow the VL53L1X to do its internal initialization.
       This.Timing.Delay_Milliseconds (100);
-      for J in 1 .. 10 loop
-         Dummy := VL53L1X_api_h.VL53L1X_BootState
-           (dev   => This.Dev,
-            state => State'Unchecked_Access);
-         if State = 3  -- undocumented; UM2150 says 1
-         then
-            This.Booted := True;
-         end if;
-         This.Timing.Delay_Milliseconds (Loop_Interval_Ms);
-      end loop;
 
-      Status := This.Booted;
+      Get_Device_Status :
+      for J in 1 .. 10 loop
+         --  We're going to do a low-level read using HAL.I2C
+         --  directly, because we don't want to raise an exception if
+         --  there's a failure.
+         HAL.I2C.Master_Transmit
+           (This    => This.Port.all,
+            Addr    => This.I2C_Address,
+            Data    => To_Device (HAL.UInt16'(VL53L1_FIRMWARE_SYSTEM_STATUS)),
+            Status  => I2C_Status);
+         exit Get_Device_Status when I2C_Status /= Ok;
+
+         declare
+            Buffer : HAL.UInt8_Array (1 .. 1);
+         begin
+            HAL.I2C.Master_Receive
+              (This    => This.Port.all,
+               Addr    => This.I2C_Address,
+               Data    => Buffer,
+               Status  => I2C_Status);
+            if I2C_Status = Ok and then Buffer (1) = 3 then
+               --  '3' is undocumented; UM2150 says 1.
+               This.State := Booted;
+               exit Get_Device_Status;
+            end if;
+         end;
+
+         This.Timing.Delay_Milliseconds (Loop_Interval_Ms);
+      end loop Get_Device_Status;
+
+      Status := (case I2C_Status is
+                    when Ok          => Ok,
+                    when Err_Error   => I2C_Error,
+                    when Err_Timeout => I2C_Timeout,
+                    when Busy        => I2C_Busy);
    end Boot_Device;
 
    ------------------------
@@ -98,17 +191,14 @@ package body VL53L1X is
    ------------------------
 
    procedure Set_Device_Address
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Addr   :        HAL.I2C.I2C_Address;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Addr :        HAL.I2C.I2C_Address)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_SetI2CAddress
         (dev         => This.Dev,
          new_address => sys_ustdint_h.uint8_t (Addr));
-      Status := True;
       This.I2C_Address := Addr;
    end Set_Device_Address;
 
@@ -117,16 +207,13 @@ package body VL53L1X is
    -----------------
 
    procedure Sensor_Init
-     (This          : in out VL53L1X_Ranging_Sensor;
-      Status        : out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_SensorInit
         (dev => This.Dev);
-      Status := True;
-      This.Sensor_Initialized := True;
+      This.State := Initialized;
    end Sensor_Init;
 
    -----------------------
@@ -134,14 +221,12 @@ package body VL53L1X is
    -----------------------
 
    procedure Get_Distance_Mode
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Mode   :    out Distance_Mode;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Mode :    out Distance_Mode)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
       LL_Mode : aliased sys_ustdint_h.uint16_t;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_GetDistanceMode
         (dev           => This.Dev,
          pDistanceMode => LL_Mode'Access);
@@ -151,7 +236,6 @@ package body VL53L1X is
                   when others =>
                      raise VL53L1X_Error
                          with "invalid distance mode" & LL_Mode'Image);
-      Status := True;
    end Get_Distance_Mode;
 
    -----------------------
@@ -159,19 +243,16 @@ package body VL53L1X is
    -----------------------
 
    procedure Set_Distance_Mode
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Mode   :        Distance_Mode := Long;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Mode :        Distance_Mode := Long)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_SetDistanceMode
         (dev          => This.Dev,
          DistanceMode => (case Mode is
                              when Short => 1,
                              when Long  => 2));
-      Status := True;
    end Set_Distance_Mode;
 
    -----------------
@@ -181,14 +262,11 @@ package body VL53L1X is
    procedure Get_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
       Measurement_Budget_Ms   :    out Budget_Millisec;
-      Between_Measurements_Ms :    out Natural;
-      Status                  :    out Boolean)
+      Between_Measurements_Ms :    out Natural)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
       Ms : aliased sys_ustdint_h.uint16_t;
    begin
-      Status := False;
-
       Dummy := VL53L1X_api_h.VL53L1X_GetTimingBudgetInMs
         (dev               => This.Dev,
          pTimingBudgetInMs => Ms'Access);
@@ -198,8 +276,6 @@ package body VL53L1X is
         (dev => This.Dev,
          pIM => Ms'Access);
       Between_Measurements_Ms := Natural (Ms);
-
-      Status := True;
    end Get_Timings;
 
    -----------------
@@ -209,12 +285,10 @@ package body VL53L1X is
    procedure Set_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
       Measurement_Budget_Ms   :        Budget_Millisec := 100;
-      Between_Measurements_Ms :        Natural := 100;
-      Status                  :    out Boolean)
+      Between_Measurements_Ms :        Natural := 100)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := True;
       Dummy := VL53L1X_api_h.VL53L1X_SetTimingBudgetInMs
         (dev              => This.Dev,
          TimingBudgetInMs =>
@@ -223,7 +297,6 @@ package body VL53L1X is
         (dev => This.Dev,
          InterMeasurementInMs =>
            sys_ustdint_h.uint32_t (Between_Measurements_Ms));
-      Status := True;
    end Set_Timings;
 
    -------------------
@@ -231,16 +304,13 @@ package body VL53L1X is
    -------------------
 
    procedure Start_Ranging
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_StartRanging
         (dev => This.Dev);
-      This.Ranging_Started := True;
-      Status := True;
+      This.State := Ranging;
    end Start_Ranging;
 
    --------------------------
@@ -249,41 +319,30 @@ package body VL53L1X is
 
    procedure Wait_For_Measurement
      (This             : in out VL53L1X_Ranging_Sensor;
-      Loop_Interval_Ms :        Positive := 10;
-      Status           :    out Boolean)
+      Loop_Interval_Ms :        Positive := 10)
    is
-      Ready : Boolean;
    begin
-      Status := False;
       loop
-         Is_Measurement_Ready (This,
-                               Ready  => Ready,
-                               Status => Status);
-         exit when Ready;
+         exit when Is_Measurement_Ready (This);
          This.Timing.Delay_Milliseconds (Loop_Interval_Ms);
       end loop;
-      Status := True;
    end Wait_For_Measurement;
 
    --------------------------
    -- Is_Measurement_Ready --
    --------------------------
 
-   procedure Is_Measurement_Ready
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Ready  :    out Boolean;
-      Status :    out Boolean)
+   function Is_Measurement_Ready
+     (This : in out VL53L1X_Ranging_Sensor) return Boolean
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
       Result : aliased sys_ustdint_h.uint8_t;
       use type sys_ustdint_h.uint8_t;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_CheckForDataReady
         (dev         => This.Dev,
          isDataReady => Result'Access);
-      Ready := Result = 1;
-      Status := True;
+      return Result = 1;
    end Is_Measurement_Ready;
 
    ---------------------
@@ -324,15 +383,12 @@ package body VL53L1X is
    -------------------------------
 
    procedure Clear_Interrupt
-     (This     : in out VL53L1X_Ranging_Sensor;
-      Status   :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_ClearInterrupt
         (dev => This.Dev);
-      Status := True;
    end Clear_Interrupt;
 
    ------------------
@@ -340,19 +396,74 @@ package body VL53L1X is
    ------------------
 
    procedure Stop_Ranging
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    is
       Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Status := False;
       Dummy := VL53L1X_api_h.VL53L1X_StopRanging
         (dev => This.Dev);
-      This.Ranging_Started := False;
-      Status := True;
+      This.State := Initialized;
    end Stop_Ranging;
 
    --  Local stuff.
+
+   function To_Device (Value : HAL.UInt16) return Two_Byte_Array
+   is
+      As_Bytes : Two_Byte_Array with Address => Value'Address;
+   begin
+      case System.Default_Bit_Order is
+         when System.High_Order_First =>
+            return As_Bytes;
+         when System.Low_Order_First =>
+            return (1 => As_Bytes (2),
+                    2 => As_Bytes (1));
+      end case;
+   end To_Device;
+
+   function From_Device (Value : Two_Byte_Array) return HAL.UInt16
+   is
+      function Convert
+      is new Ada.Unchecked_Conversion (Two_Byte_Array, HAL.UInt16);
+   begin
+      case System.Default_Bit_Order is
+         when System.High_Order_First =>
+            return Convert (Value);
+         when System.Low_Order_First =>
+            return Convert ((1 => Value (2),
+                             2 => Value (1)));
+      end case;
+   end From_Device;
+
+   function To_Device (Value : HAL.UInt32) return Four_Byte_Array
+   is
+      As_Bytes : Four_Byte_Array with Address => Value'Address;
+   begin
+      case System.Default_Bit_Order is
+         when System.High_Order_First =>
+            return As_Bytes;
+         when System.Low_Order_First =>
+            return (1 => As_Bytes (4),
+                    2 => As_Bytes (3),
+                    3 => As_Bytes (2),
+                    4 => As_Bytes (1));
+      end case;
+   end To_Device;
+
+   function From_Device (Value : Four_Byte_Array) return HAL.UInt32
+   is
+      function Convert
+      is new Ada.Unchecked_Conversion (Four_Byte_Array, HAL.UInt32);
+   begin
+      case System.Default_Bit_Order is
+         when System.High_Order_First =>
+            return Convert (Value);
+         when System.Low_Order_First =>
+            return Convert ((1 => Value (4),
+                             2 => Value (3),
+                             3 => Value (2),
+                             4 => Value (1)));
+      end case;
+   end From_Device;
 
    --  These are low-level comms routines used in vl53l1_platform.h.
    --  The idea is that the C code can call these.

@@ -48,42 +48,40 @@ package VL53L1X is
 
    function Is_Booted (This : VL53L1X_Ranging_Sensor) return Boolean;
 
+   type Boot_Status is (Ok, I2C_Error, I2C_Timeout, I2C_Busy);
+
    procedure Boot_Device
      (This             : in out VL53L1X_Ranging_Sensor;
       Loop_Interval_Ms :        Positive := 10;
-      Status           :    out Boolean)
+      Status           :    out Boot_Status)
    with
      Pre => not Is_Booted (This),
-     Post => Is_Booted (This) = Status;
+     Post => Is_Booted (This) = (Status = Ok);
 
    procedure Set_Device_Address
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Addr   :        HAL.I2C.I2C_Address;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Addr :        HAL.I2C.I2C_Address)
    with
      Pre => Is_Booted (This);
 
    function Sensor_Initialized (This : VL53L1X_Ranging_Sensor) return Boolean;
 
    procedure Sensor_Init
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    with
      Pre => Is_Booted (This),
-     Post => Sensor_Initialized (This) = Status;
+     Post => Sensor_Initialized (This);
 
    type Distance_Mode is (Short, Long);
 
    procedure Get_Distance_Mode
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Mode   :    out Distance_Mode;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Mode :    out Distance_Mode)
    with Pre => Sensor_Initialized (This);
 
    procedure Set_Distance_Mode
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Mode   :        Distance_Mode := Long;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor;
+      Mode :        Distance_Mode := Long)
    with Pre => Sensor_Initialized (This);
    --  The defaulted mode is what the device initializes to.
 
@@ -92,16 +90,14 @@ package VL53L1X is
    procedure Get_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
       Measurement_Budget_Ms   :    out Budget_Millisec;
-      Between_Measurements_Ms :    out Natural;
-      Status                  :    out Boolean)
+      Between_Measurements_Ms :    out Natural)
    with
      Pre => Sensor_Initialized (This);
 
    procedure Set_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
       Measurement_Budget_Ms   :        Budget_Millisec := 100;
-      Between_Measurements_Ms :        Natural := 100;
-      Status                  :    out Boolean)
+      Between_Measurements_Ms :        Natural := 100)
    with
      Pre =>
        Between_Measurements_Ms >= Measurement_Budget_Ms
@@ -110,23 +106,19 @@ package VL53L1X is
    function Ranging_Started (This : VL53L1X_Ranging_Sensor) return Boolean;
 
    procedure Start_Ranging
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    with
      Pre => Sensor_Initialized (This),
      Post => Ranging_Started (This);
 
    procedure Wait_For_Measurement
      (This             : in out VL53L1X_Ranging_Sensor;
-      Loop_Interval_Ms :        Positive := 10;
-      Status           :    out Boolean)
+      Loop_Interval_Ms :        Positive := 10)
    with
      Pre => Ranging_Started (This);
 
-   procedure Is_Measurement_Ready
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Ready  :    out Boolean;
-      Status :    out Boolean)
+   function Is_Measurement_Ready
+     (This : in out VL53L1X_Ranging_Sensor) return Boolean
    with
      Pre => Ranging_Started (This);
 
@@ -169,26 +161,24 @@ package VL53L1X is
      Pre => Ranging_Started (This);
 
    procedure Clear_Interrupt
-     (This     : in out VL53L1X_Ranging_Sensor;
-      Status   :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    with
      Pre => Ranging_Started (This);
 
    procedure Stop_Ranging
-     (This   : in out VL53L1X_Ranging_Sensor;
-      Status :    out Boolean)
+     (This : in out VL53L1X_Ranging_Sensor)
    with
      Pre => Sensor_Initialized (This),
      Post => not Ranging_Started (This);
 
 private
 
+   type Sensor_State is (Unbooted, Booted, Initialized, Ranging);
+
    type VL53L1X_Ranging_Sensor (Port   : not null HAL.I2C.Any_I2C_Port;
                                 Timing : not null HAL.Time.Any_Delays)
       is limited record
-         Booted             : Boolean := False;
-         Sensor_Initialized : Boolean := False;
-         Ranging_Started    : Boolean := False;
+         State : Sensor_State := Unbooted;
 
          --  Default address: can be changed by software
          I2C_Address : HAL.I2C.I2C_Address := 16#52#;
@@ -198,12 +188,12 @@ private
       end record;
 
    function Is_Booted (This : VL53L1X_Ranging_Sensor) return Boolean
-   is (This.Booted);
+   is (This.State >= Booted);
 
    function Sensor_Initialized (This : VL53L1X_Ranging_Sensor) return Boolean
-   is (This.Sensor_Initialized);
+   is (This.State >= Initialized);
 
    function Ranging_Started (This : VL53L1X_Ranging_Sensor) return Boolean
-   is (This.Ranging_Started);
+   is (This.State = Ranging);
 
 end VL53L1X;

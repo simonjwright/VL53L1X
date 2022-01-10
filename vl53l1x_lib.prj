@@ -1,0 +1,13 @@
+# Emacs ada-mode project file.
+
+# Used to set up environment variables for vl53l1x_lib.gpr
+# (aggregate projects can do this, but they severely limit the use of
+# package Builder in projects called up via the aggregate).
+
+gpr_file=./vl53l1x_lib.gpr
+casing=$HOME/.emacs_case_exceptions
+target=arm-eabi-
+$RUNTIME=$HOME/Developer/cortex-gnat-rts/local/stm32f4
+$PLATFORM_BUILD=Production
+$ADL_BUILD=Production
+$ADL_BUILD_CHECKS=Enabled
