@@ -36,7 +36,7 @@
 with Ada.Unchecked_Conversion;
 with Interfaces.C.Pointers;
 
-with HAL; use HAL;
+with HAL;
 
 with VL53L1X_api_h;
 with sys_ustdint_h;
@@ -104,6 +104,32 @@ package body VL53L1X is
    end Registers;
    use Registers;
 
+   --  Low-level device access procedures.
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.I2C.I2C_Data);
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.UInt16);
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.UInt32);
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.I2C.I2C_Data);
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.UInt16);
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.UInt32);
+
    --  The VL53L1X is a big-endian device. Register addresses are two
    --  bytes wide. The data is mainly (arrays of) single bytes, but
    --  some is two bytes wide, some 4.
@@ -163,6 +189,7 @@ package body VL53L1X is
 
          declare
             Buffer : HAL.UInt8_Array (1 .. 1);
+            use type HAL.UInt8;
          begin
             HAL.I2C.Master_Receive
               (This    => This.Port.all,
@@ -194,11 +221,11 @@ package body VL53L1X is
      (This : in out VL53L1X_Ranging_Sensor;
       Addr :        HAL.I2C.I2C_Address)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
+      use all type HAL.UInt8;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_SetI2CAddress
-        (dev         => This.Dev,
-         new_address => sys_ustdint_h.uint8_t (Addr));
+      Write (This,
+             Index => VL53L1_I2C_SLAVE_DEVICE_ADDRESS,
+             Data  => (1 => Shift_Right (HAL.UInt8 (Addr), 1)));
       This.I2C_Address := Addr;
    end Set_Device_Address;
 
@@ -209,11 +236,143 @@ package body VL53L1X is
    procedure Sensor_Init
      (This : in out VL53L1X_Ranging_Sensor)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
+      pragma Style_Checks (Off); -- the continuation comment lines
+
+      VL51L1X_DEFAULT_CONFIGURATION :
+        constant HAL.I2C.I2C_Data (16#2d# .. 16#87#) :=
+          (
+           16#00#, -- 0x2d : set bit 2 and 5 to 1 for fast plus mode
+                   -- (1MHz I2C), else don't touch
+           16#00#, -- 0x2e : bit 0 if I2C pulled up at 1.8V, else set bit
+                   -- 0 to 1 (pull up at AVDD)
+           16#00#, -- 0x2f : bit 0 if GPIO pulled up at 1.8V, else set
+                   -- bit 0 to 1 (pull up at AVDD)
+           16#01#, -- 0x30 : set bit 4 to 0 for active high interrupt and
+                   -- 1 for active low (bits 3:0 must be 0x1), use
+                   -- SetInterruptPolarity()
+           16#02#, -- 0x31 : bit 1 = interrupt depending on the polarity,
+                   -- use CheckForDataReady()
+           16#00#, -- 0x32 : not user-modifiable
+           16#02#, -- 0x33 : not user-modifiable
+           16#08#, -- 0x34 : not user-modifiable
+           16#00#, -- 0x35 : not user-modifiable
+           16#08#, -- 0x36 : not user-modifiable
+           16#10#, -- 0x37 : not user-modifiable
+           16#01#, -- 0x38 : not user-modifiable
+           16#01#, -- 0x39 : not user-modifiable
+           16#00#, -- 0x3a : not user-modifiable
+           16#00#, -- 0x3b : not user-modifiable
+           16#00#, -- 0x3c : not user-modifiable
+           16#00#, -- 0x3d : not user-modifiable
+           16#ff#, -- 0x3e : not user-modifiable
+           16#00#, -- 0x3f : not user-modifiable
+           16#0F#, -- 0x40 : not user-modifiable
+           16#00#, -- 0x41 : not user-modifiable
+           16#00#, -- 0x42 : not user-modifiable
+           16#00#, -- 0x43 : not user-modifiable
+           16#00#, -- 0x44 : not user-modifiable
+           16#00#, -- 0x45 : not user-modifiable
+           16#20#, -- 0x46 : interrupt configuration 0->level low
+                   -- detection, 1-> level high, 2-> Out of window, 3->In
+                   -- window, 0x20-> New sample ready , TBC
+           16#0b#, -- 0x47 : not user-modifiable
+           16#00#, -- 0x48 : not user-modifiable
+           16#00#, -- 0x49 : not user-modifiable
+           16#02#, -- 0x4a : not user-modifiable
+           16#0a#, -- 0x4b : not user-modifiable
+           16#21#, -- 0x4c : not user-modifiable
+           16#00#, -- 0x4d : not user-modifiable
+           16#00#, -- 0x4e : not user-modifiable
+           16#05#, -- 0x4f : not user-modifiable
+           16#00#, -- 0x50 : not user-modifiable
+           16#00#, -- 0x51 : not user-modifiable
+           16#00#, -- 0x52 : not user-modifiable
+           16#00#, -- 0x53 : not user-modifiable
+           16#c8#, -- 0x54 : not user-modifiable
+           16#00#, -- 0x55 : not user-modifiable
+           16#00#, -- 0x56 : not user-modifiable
+           16#38#, -- 0x57 : not user-modifiable
+           16#ff#, -- 0x58 : not user-modifiable
+           16#01#, -- 0x59 : not user-modifiable
+           16#00#, -- 0x5a : not user-modifiable
+           16#08#, -- 0x5b : not user-modifiable
+           16#00#, -- 0x5c : not user-modifiable
+           16#00#, -- 0x5d : not user-modifiable
+           16#01#, -- 0x5e : not user-modifiable
+           16#cc#, -- 0x5f : not user-modifiable
+           16#0f#, -- 0x60 : not user-modifiable
+           16#01#, -- 0x61 : not user-modifiable
+           16#f1#, -- 0x62 : not user-modifiable
+           16#0d#, -- 0x63 : not user-modifiable
+           16#01#, -- 0x64 : Sigma threshold MSB (mm in 14.2 format for
+                   -- MSB+LSB), use SetSigmaThreshold(), default value 90
+                   -- mm
+           16#68#, -- 0x65 : Sigma threshold LSB
+           16#00#, -- 0x66 : Min count Rate MSB (MCPS in 9.7 format for
+                   -- MSB+LSB), use SetSignalThreshold()
+           16#80#, -- 0x67 : Min count Rate LSB
+           16#08#, -- 0x68 : not user-modifiable
+           16#b8#, -- 0x69 : not user-modifiable
+           16#00#, -- 0x6a : not user-modifiable
+           16#00#, -- 0x6b : not user-modifiable
+           16#00#, -- 0x6c : Intermeasurement period MSB, 32 bits
+                   -- register, use SetIntermeasurementInMs()
+           16#00#, -- 0x6d : Intermeasurement period
+           16#0f#, -- 0x6e : Intermeasurement period
+           16#89#, -- 0x6f : Intermeasurement period LSB
+           16#00#, -- 0x70 : not user-modifiable
+           16#00#, -- 0x71 : not user-modifiable
+           16#00#, -- 0x72 : distance threshold high MSB (in mm,
+                   -- MSB+LSB), use SetD:tanceThreshold()
+           16#00#, -- 0x73 : distance threshold high LSB
+           16#00#, -- 0x74 : distance threshold low MSB ( in mm,
+                   -- MSB+LSB), use SetD:tanceThreshold()
+           16#00#, -- 0x75 : distance threshold low LSB
+           16#00#, -- 0x76 : not user-modifiable
+           16#01#, -- 0x77 : not user-modifiable
+           16#0f#, -- 0x78 : not user-modifiable
+           16#0d#, -- 0x79 : not user-modifiable
+           16#0e#, -- 0x7a : not user-modifiable
+           16#0e#, -- 0x7b : not user-modifiable
+           16#00#, -- 0x7c : not user-modifiable
+           16#00#, -- 0x7d : not user-modifiable
+           16#02#, -- 0x7e : not user-modifiable
+           16#c7#, -- 0x7f : ROI center, use SetROI()
+           16#ff#, -- 0x80 : XY ROI (X=Width, Y=Height), use SetROI()
+           16#9B#, -- 0x81 : not user-modifiable
+           16#00#, -- 0x82 : not user-modifiable
+           16#00#, -- 0x83 : not user-modifiable
+           16#00#, -- 0x84 : not user-modifiable
+           16#01#, -- 0x85 : not user-modifiable
+           16#00#, -- 0x86 : clear interrupt, use ClearInterrupt()
+           16#00#  -- 0x87 : start ranging, use StartRanging() or
+                   -- StopRanging(), If you want an automatic start after
+                   -- VL53L1X_init() call, put 0x40 in location 0x87
+          );
+
+      pragma Style_Checks (On);
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_SensorInit
-        (dev => This.Dev);
-      This.State := Initialized;
+      Write (This,
+             Index => HAL.UInt16 (VL51L1X_DEFAULT_CONFIGURATION'First),
+             Data  => VL51L1X_DEFAULT_CONFIGURATION);
+
+      This.State := Initialized;  -- needed here to do the first measurement.
+
+      --  Discard the first measurement.
+      Start_Ranging (This);
+      loop
+         exit when Is_Measurement_Ready (This);
+      end loop;
+      Clear_Interrupt (This);
+      Stop_Ranging (This);
+
+      --  I think this is to do with temperature?
+      Write (This,
+             Index => VL53L1_VHV_CONFIG_TIMEOUT_MACROP_LOOP_BOUND,
+             Data  => (1 => 16#09#));
+      Write (This,
+             Index => 16#0b#,
+             Data  => (1 => 16#00#));
    end Sensor_Init;
 
    -----------------------
@@ -224,18 +383,16 @@ package body VL53L1X is
      (This : in out VL53L1X_Ranging_Sensor;
       Mode :    out Distance_Mode)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
-      LL_Mode : aliased sys_ustdint_h.uint16_t;
+      Buffer : HAL.I2C.I2C_Data (1 .. 1);
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_GetDistanceMode
-        (dev           => This.Dev,
-         pDistanceMode => LL_Mode'Access);
-      Mode := (case LL_Mode is
-                  when 1      => Short,
-                  when 2      => Long,
+      Read (This,
+            Index => PHASECAL_CONFIG_TIMEOUT_MACROP,
+            Data  => Buffer);
+      Mode := (case Buffer (1) is
+                  when 16#14# => Short,
+                  when 16#0a# => Long,
                   when others =>
-                     raise VL53L1X_Error
-                         with "invalid distance mode" & LL_Mode'Image);
+                     raise VL53L1X_Error with "invalid distance mode value");
    end Get_Distance_Mode;
 
    -----------------------
@@ -261,21 +418,55 @@ package body VL53L1X is
 
    procedure Get_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :    out Budget_Millisec;
+      Measurement_Budget_Ms   :    out Measurement_Budget;
       Between_Measurements_Ms :    out Natural)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
-      Ms : aliased sys_ustdint_h.uint16_t;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_GetTimingBudgetInMs
-        (dev               => This.Dev,
-         pTimingBudgetInMs => Ms'Access);
-      Measurement_Budget_Ms := Budget_Millisec (Ms);
+      GetTimingBudgetInMs :
+      declare
+         Raw : HAL.UInt16;
+      begin
+         Read (This,
+               Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+               Data  => Raw);
+         case Raw is
+            when 16#001d# =>
+               Measurement_Budget_Ms := 15;
+            when 16#0051# | 16#001e# =>
+               Measurement_Budget_Ms := 20;
+            when 16#00d6# | 16#0060# =>
+               Measurement_Budget_Ms := 33;
+            when 16#01ae# | 16#00ad# =>
+               Measurement_Budget_Ms := 50;
+            when 16#02e1# | 16#01cc# =>
+               Measurement_Budget_Ms := 100;
+            when 16#03e1# | 16#02d9# =>
+               Measurement_Budget_Ms := 200;
+            when 16#0591# | 16#048f# =>
+               Measurement_Budget_Ms := 500;
+            when others =>
+               raise VL53L1X_Error
+                 with "invalid measurement budget" & Raw'Image;
+         end case;
+      end GetTimingBudgetInMs;
 
-      Dummy := VL53L1X_api_h.VL53L1X_GetInterMeasurementInMs
-        (dev => This.Dev,
-         pIM => Ms'Access);
-      Between_Measurements_Ms := Natural (Ms);
+      GetInterMeasurementInMs :
+      declare
+         Tmp          : HAL.UInt32;
+         Raw_Interval : Float;
+         Clock_PLL    : HAL.UInt16;
+         use all type HAL.UInt16;
+      begin
+         Read (This,
+               Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
+               Data  => Tmp);
+         Raw_Interval := Float (Tmp);
+         Read (This,
+               Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
+               Data  => Clock_PLL);
+         Between_Measurements_Ms :=
+           Natural (Raw_Interval / (Float (Clock_PLL and 16#03ff#) * 1.065));
+      end GetInterMeasurementInMs;
    end Get_Timings;
 
    -----------------
@@ -284,19 +475,86 @@ package body VL53L1X is
 
    procedure Set_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :        Budget_Millisec := 100;
+      Measurement_Budget_Ms   :        Measurement_Budget := 100;
       Between_Measurements_Ms :        Natural := 100)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_SetTimingBudgetInMs
-        (dev              => This.Dev,
-         TimingBudgetInMs =>
-           sys_ustdint_h.uint16_t (Measurement_Budget_Ms));
-      Dummy := VL53L1X_api_h.VL53L1X_SetInterMeasurementInMs
-        (dev => This.Dev,
-         InterMeasurementInMs =>
-           sys_ustdint_h.uint32_t (Between_Measurements_Ms));
+      SetTimingBudgetInMs :
+      declare
+         Mode : Distance_Mode;
+         --  The next two declarations make it easier to implement the
+         --  limitation that the measurement budget can't be 15 in
+         --  Long distance mode.
+         subtype Measurement_Budget_For_Long
+           is Measurement_Budget range 20 .. 500;
+         Long_Measurement_Budget_Ms : constant Measurement_Budget_For_Long
+           := Measurement_Budget_For_Long (Measurement_Budget_Ms);
+      begin
+         Get_Distance_Mode (This, Mode);
+         case Mode is
+            when Short =>
+               Write (This,
+                      Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+                      Data  =>
+                        HAL.UInt16'(case Measurement_Budget_Ms is
+                                       when 15 => 16#001d#,
+                                       when 20 => 16#0051#,
+                                       when 33 => 16#00d6#,
+                                       when 50 => 16#01ae#,
+                                       when 100 => 16#02e1#,
+                                       when 200 => 16#03e1#,
+                                       when 500 => 16#0591#));
+               Write (This,
+                      Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
+                      Data  =>
+                        HAL.UInt16'(case Measurement_Budget_Ms is
+                                       when 15 => 16#0027#,
+                                       when 20 => 16#006e#,
+                                       when 33 => 16#006e#,
+                                       when 50 => 16#01e8#,
+                                       when 100 => 16#0388#,
+                                       when 200 => 16#0496#,
+                                       when 500 => 16#05c1#));
+            when Long =>
+               Write (This,
+                      Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+                      Data  =>
+                        HAL.UInt16'(case Long_Measurement_Budget_Ms is
+                                       when 20 => 16#001e#,
+                                       when 33 => 16#0060#,
+                                       when 50 => 16#00ad#,
+                                       when 100 => 16#01cc#,
+                                       when 200 => 16#02d9#,
+                                       when 500 => 16#048f#));
+               Write (This,
+                      Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
+                      Data  =>
+                        HAL.UInt16'(case Long_Measurement_Budget_Ms is
+                                       when 20 => 16#0022#,
+                                       when 33 => 16#006e#,
+                                       when 50 => 16#00c6#,
+                                       when 100 => 16#01ea#,
+                                       when 200 => 16#02f8#,
+                                       when 500 => 16#04a4#));
+         end case;
+      end SetTimingBudgetInMs;
+      SetInterMeasurementInMs :
+      declare
+         Clock_PLL : HAL.UInt16;
+         Raw_Interval : HAL.UInt32;
+         use all type HAL.UInt16;
+      begin
+         Read (This,
+               Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
+               Data  => Clock_PLL);
+         Raw_Interval :=
+           HAL.UInt32 (Float (Clock_PLL and 16#03ff#)
+                         * Float (Between_Measurements_Ms)
+                         * 1.075);  -- XXX in Get, the factor is 1.065
+         Write (This,
+                Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
+                Data  => Raw_Interval);
+      end SetInterMeasurementInMs;
    end Set_Timings;
 
    -------------------
@@ -306,10 +564,10 @@ package body VL53L1X is
    procedure Start_Ranging
      (This : in out VL53L1X_Ranging_Sensor)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_StartRanging
-        (dev => This.Dev);
+      Write (This,
+             Index => SYSTEM_MODE_START,
+             Data  => (1 => 16#40#));
       This.State := Ranging;
    end Start_Ranging;
 
@@ -335,14 +593,23 @@ package body VL53L1X is
    function Is_Measurement_Ready
      (This : in out VL53L1X_Ranging_Sensor) return Boolean
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
-      Result : aliased sys_ustdint_h.uint8_t;
-      use type sys_ustdint_h.uint8_t;
+      --  We need to compare the data status and the interrupt
+      --  polarity; haven't provided any interface to interrupt
+      --  polarity yet, so do it hre.
+      Buffer : HAL.I2C.I2C_Data (1 .. 1);
+      Polarity : Boolean;
+      Availability : Boolean;
+      use type HAL.UInt8;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_CheckForDataReady
-        (dev         => This.Dev,
-         isDataReady => Result'Access);
-      return Result = 1;
+      Read (This,
+            Index => GPIO_HV_MUX_CTRL,
+            Data  => Buffer);
+      Polarity := (Buffer (1) and 16#10#) = 0;
+      Read (This,
+            Index => GPIO_TIO_HV_STATUS,
+            Data  => Buffer);
+      Availability := (Buffer (1) and 16#01#) = 1;
+      return Availability = Polarity;
    end Is_Measurement_Ready;
 
    ---------------------
@@ -355,26 +622,27 @@ package body VL53L1X is
       Valid       :    out Boolean;
       Status      :    out Ranging_Status)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
-      Result : aliased VL53L1X_api_h.VL53L1X_Result_t;
+      Buffer : HAL.I2C.I2C_Data (0 .. 16);
+      use all type HAL.UInt8;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_GetResult
-        (dev     => This.Dev,
-         pResult => Result'Access);
+      Read (This,
+            Index => VL53L1_RESULT_RANGE_STATUS,
+            Data  => Buffer);
 
-      Status :=
-        (case Result.Status is
-            when 0      => Ok,
-            when 1      => Sigma_Failure,
-            when 2      => Signal_Failure,
-            when 4      => Out_Of_Bounds,
-            when 7      => Wraparound,
-            when others => raise VL53L1X_Error
-                   with "invalid status " & Result.Status'Image);
+      Buffer (0) := Buffer (0) and 16#1f#;
+      Status := (case Buffer (0) is
+                    when 4 => Signal_Failure,
+                    when 5 => Out_Of_Bounds,
+                    when 6 => Sigma_Failure,
+                    when 7 => Wraparound,
+                    when 9 => Ok,
+                    when others => raise VL53L1X_Error
+                           with "invalid status " & Buffer (0)'Image);
+
       Valid := Status = Ok;
 
-      if Status = Ok then
-         Distance_Mm := Natural (Result.Distance);
+      if Valid then
+         Distance_Mm := Natural (HAL.UInt16'(From_Device (Buffer (13 .. 14))));
       end if;
    end Get_Measurement;
 
@@ -385,10 +653,10 @@ package body VL53L1X is
    procedure Clear_Interrupt
      (This : in out VL53L1X_Ranging_Sensor)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_ClearInterrupt
-        (dev => This.Dev);
+      Write (This,
+             Index => SYSTEM_INTERRUPT_CLEAR,
+             Data  => (1 => 16#01#));
    end Clear_Interrupt;
 
    ------------------
@@ -398,14 +666,117 @@ package body VL53L1X is
    procedure Stop_Ranging
      (This : in out VL53L1X_Ranging_Sensor)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_StopRanging
-        (dev => This.Dev);
+      Write (This,
+             Index => SYSTEM_MODE_START,
+             Data  => (1 => 16#00#));
       This.State := Initialized;
    end Stop_Ranging;
 
    --  Local stuff.
+
+   ----------
+   -- Read --
+   ----------
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.I2C.I2C_Data)
+   is
+      I2C_Status : HAL.I2C.I2C_Status;
+      use all type HAL.I2C.I2C_Status;
+   begin
+      HAL.I2C.Master_Transmit
+        (This    => This.Port.all,
+         Addr    => This.I2C_Address,
+         Data    => To_Device (Index),
+         Status  => I2C_Status);
+      if I2C_Status /= Ok then
+         raise VL53L1X_Error
+           with "I2C write error during read: " & I2C_Status'Image;
+      end if;
+      HAL.I2C.Master_Receive
+        (This    => This.Port.all,
+         Addr    => This.I2C_Address,
+         Data    => Data,
+         Status  => I2C_Status);
+      if I2C_Status /= Ok then
+         raise VL53L1X_Error
+           with "I2C read error: " & I2C_Status'Image;
+      end if;
+   end Read;
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.UInt16)
+   is
+      Buffer : HAL.I2C.I2C_Data (1 .. 2);
+   begin
+      Read (This,
+            Index => Index,
+            Data  => Buffer);
+      Data := From_Device (Buffer);
+   end Read;
+
+   procedure Read (This  : in out VL53L1X_Ranging_Sensor;
+                   Index :        HAL.UInt16;
+                   Data  :    out HAL.UInt32)
+   is
+      Buffer : HAL.I2C.I2C_Data (1 .. 4);
+   begin
+      Read (This,
+            Index => Index,
+            Data  => Buffer);
+      Data := From_Device (Buffer);
+   end Read;
+
+   -----------
+   -- Write --
+   -----------
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.I2C.I2C_Data)
+   is
+      use type HAL.I2C.I2C_Data;
+      Buffer : constant HAL.I2C.I2C_Data (1 .. Data'Length + 2)
+        := To_Device (Index) & Data;
+      I2C_Status : HAL.I2C.I2C_Status;
+      use all type HAL.I2C.I2C_Status;
+   begin
+      HAL.I2C.Master_Transmit
+        (This    => This.Port.all,
+         Addr    => This.I2C_Address,
+         Data    => Buffer,
+         Status  => I2C_Status);
+      if I2C_Status /= Ok then
+         raise VL53L1X_Error with "I2C write error: " & I2C_Status'Image;
+      end if;
+   end Write;
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.UInt16)
+   is
+   begin
+      Write (This,
+             Index => Index,
+             Data => To_Device (Data));
+   end Write;
+
+   procedure Write (This  : in out VL53L1X_Ranging_Sensor;
+                    Index :        HAL.UInt16;
+                    Data  :        HAL.UInt32)
+   is
+   begin
+      Write (This,
+             Index => Index,
+             Data => To_Device (Data));
+   end Write;
+
+   ---------------
+   -- To_Device --
+   ---------------
 
    function To_Device (Value : HAL.UInt16) return Two_Byte_Array
    is
@@ -419,20 +790,6 @@ package body VL53L1X is
                     2 => As_Bytes (1));
       end case;
    end To_Device;
-
-   function From_Device (Value : Two_Byte_Array) return HAL.UInt16
-   is
-      function Convert
-      is new Ada.Unchecked_Conversion (Two_Byte_Array, HAL.UInt16);
-   begin
-      case System.Default_Bit_Order is
-         when System.High_Order_First =>
-            return Convert (Value);
-         when System.Low_Order_First =>
-            return Convert ((1 => Value (2),
-                             2 => Value (1)));
-      end case;
-   end From_Device;
 
    function To_Device (Value : HAL.UInt32) return Four_Byte_Array
    is
@@ -448,6 +805,24 @@ package body VL53L1X is
                     4 => As_Bytes (1));
       end case;
    end To_Device;
+
+   -----------------
+   -- From_Device --
+   -----------------
+
+   function From_Device (Value : Two_Byte_Array) return HAL.UInt16
+   is
+      function Convert
+      is new Ada.Unchecked_Conversion (Two_Byte_Array, HAL.UInt16);
+   begin
+      case System.Default_Bit_Order is
+         when System.High_Order_First =>
+            return Convert (Value);
+         when System.Low_Order_First =>
+            return Convert ((1 => Value (2),
+                             2 => Value (1)));
+      end case;
+   end From_Device;
 
    function From_Device (Value : Four_Byte_Array) return HAL.UInt32
    is
@@ -572,6 +947,7 @@ package body VL53L1X is
       Data_P : C_Pointers.Pointer := C_Pointers.Pointer (Pdata);
       Buffer : HAL.UInt8_Array (1 .. Natural (Count) + 2);
       Ret : HAL.I2C.I2C_Status;
+      use all type HAL.UInt16;
    begin
       Buffer (1) := HAL.UInt8 (Shift_Right (Index, 8));
       Buffer (2) := HAL.UInt8 (Index and 16#ff#);
@@ -604,6 +980,7 @@ package body VL53L1X is
      return Interfaces.Integer_8
    is
       Ret : HAL.I2C.I2C_Status;
+      use all type HAL.UInt16;
       use all type HAL.I2C.I2C_Status;
    begin
       HAL.I2C.Master_Transmit

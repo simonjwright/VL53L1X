@@ -85,18 +85,19 @@ package VL53L1X is
    with Pre => Sensor_Initialized (This);
    --  The defaulted mode is what the device initializes to.
 
-   subtype Budget_Millisec is Natural range 20 .. 1000;
+   subtype Measurement_Budget is Natural
+   with Predicate => Measurement_Budget in 15 | 20 | 33 | 50 | 100 | 200 | 500;
 
    procedure Get_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :    out Budget_Millisec;
+      Measurement_Budget_Ms   :    out Measurement_Budget;
       Between_Measurements_Ms :    out Natural)
    with
      Pre => Sensor_Initialized (This);
 
    procedure Set_Timings
      (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :        Budget_Millisec := 100;
+      Measurement_Budget_Ms   :        Measurement_Budget := 100;
       Between_Measurements_Ms :        Natural := 100)
    with
      Pre =>
