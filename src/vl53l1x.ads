@@ -74,9 +74,8 @@ package VL53L1X is
 
    type Distance_Mode is (Short, Long);
 
-   procedure Get_Distance_Mode
-     (This : in out VL53L1X_Ranging_Sensor;
-      Mode :    out Distance_Mode)
+   function Get_Distance_Mode
+     (This : in out VL53L1X_Ranging_Sensor) return Distance_Mode
    with Pre => Sensor_Initialized (This);
 
    procedure Set_Distance_Mode
@@ -85,24 +84,29 @@ package VL53L1X is
    with Pre => Sensor_Initialized (This);
    --  The defaulted mode is what the device initializes to.
 
-   subtype Measurement_Budget is Natural
+   subtype Milliseconds is Natural;
+   subtype Measurement_Budget is Milliseconds
    with Predicate => Measurement_Budget in 15 | 20 | 33 | 50 | 100 | 200 | 500;
 
-   procedure Get_Timings
-     (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :    out Measurement_Budget;
-      Between_Measurements_Ms :    out Natural)
-   with
-     Pre => Sensor_Initialized (This);
+   function Get_Inter_Measurement_Time
+     (This : in out VL53L1X_Ranging_Sensor) return Milliseconds
+   with Pre => Sensor_Initialized (This);
 
-   procedure Set_Timings
-     (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :        Measurement_Budget := 100;
-      Between_Measurements_Ms :        Natural := 100)
-   with
-     Pre =>
-       Between_Measurements_Ms >= Measurement_Budget_Ms
-       and then (Sensor_Initialized (This) and not Ranging_Started (This));
+   function Get_Measurement_Budget
+     (This : in out VL53L1X_Ranging_Sensor) return Measurement_Budget
+   with Pre => Sensor_Initialized (This);
+
+   procedure Set_Inter_Measurement_Time
+     (This     : in out VL53L1X_Ranging_Sensor;
+      Interval :        Milliseconds)
+   with Pre =>
+     Sensor_Initialized (This) and not Ranging_Started (This);
+
+   procedure Set_Measurement_Budget
+     (This   : in out VL53L1X_Ranging_Sensor;
+      Budget :        Measurement_Budget := 100)
+   with Pre =>
+     Sensor_Initialized (This) and not Ranging_Started (This);
 
    function Ranging_Started (This : VL53L1X_Ranging_Sensor) return Boolean;
 
@@ -153,11 +157,17 @@ package VL53L1X is
    --  add 6 m to the distance returned. However, that is a very
    --  approximate estimation.
 
-   procedure Get_Measurement
-     (This        : in out VL53L1X_Ranging_Sensor;
-      Distance_Mm :    out Natural;
-      Valid       :    out Boolean;
-      Status      :    out Ranging_Status)
+   subtype Millimetres is Natural;
+
+   type Measurement (Status : Ranging_Status := Ok) is record
+      case Status is
+         when Ok     => Distance : Millimetres;
+         when others => null;
+      end case;
+   end record;
+
+   function Get_Measurement
+     (This : in out VL53L1X_Ranging_Sensor) return Measurement
    with
      Pre => Ranging_Started (This);
 

@@ -45,47 +45,33 @@ procedure VL53L1X_Demo.Main is
 
       VL53L1X.Sensor_Init (Sensor);
 
-      declare
-         Mode : VL53L1X.Distance_Mode;
-      begin
-         VL53L1X.Get_Distance_Mode (Sensor, Mode => Mode);
-         Semihosting.Log_Line ("distance mode: " & Mode'Image);
-      end;
+      Semihosting.Log_Line
+        ("timing budget:"
+           & VL53L1X.Get_Measurement_Budget (Sensor)'Image
+           & ", interval:"
+           & VL53L1X.Get_Inter_Measurement_Time (Sensor)'Image);
+
+      Semihosting.Log_Line ("distance mode: "
+                              & VL53L1X.Get_Distance_Mode (Sensor)'Image);
 
       VL53L1X.Set_Distance_Mode (Sensor, Mode => VL53L1X.Short);
 
-      declare
-         Mode : VL53L1X.Distance_Mode;
-      begin
-         VL53L1X.Get_Distance_Mode (Sensor, Mode => Mode);
-         Semihosting.Log_Line ("distance mode: " & Mode'Image);
-      end;
+      Semihosting.Log_Line ("distance mode: "
+                              & VL53L1X.Get_Distance_Mode (Sensor)'Image);
 
       VL53L1X.Set_Distance_Mode (Sensor, Mode => VL53L1X.Long);
 
-      declare
-         Mode : VL53L1X.Distance_Mode;
-      begin
-         VL53L1X.Get_Distance_Mode (Sensor, Mode => Mode);
-         Semihosting.Log_Line ("distance mode: " & Mode'Image);
-      end;
+      Semihosting.Log_Line ("distance mode: "
+                              & VL53L1X.Get_Distance_Mode (Sensor)'Image);
 
-      declare
-         Budget   : Natural;
-         Interval : Natural;
-      begin
-         VL53L1X.Get_Timings
-           (Sensor,
-            Measurement_Budget_Ms   => Budget,
-            Between_Measurements_Ms => Interval);
-         Semihosting.Log_Line
-           ("timing budget:" & Budget'Image & ", interval:" & Interval'Image);
-      end;
+      Semihosting.Log_Line
+        ("timing budget:"
+           & VL53L1X.Get_Measurement_Budget (Sensor)'Image
+           & ", interval:"
+           & VL53L1X.Get_Inter_Measurement_Time (Sensor)'Image);
 
-      VL53L1X.Set_Timings
-        (Sensor,
-         Measurement_Budget_Ms   => 500,
-         Between_Measurements_Ms => 1_500);
+      VL53L1X.Set_Measurement_Budget (Sensor, Budget => 500);
+      VL53L1X.Set_Inter_Measurement_Time (Sensor, Interval => 1_500);
    end Setup_Sensor;
 
 begin
@@ -121,9 +107,8 @@ begin
          exit when Ada.Real_Time.Clock >= Stop_Time;
          declare
             Breakout_Available : Data_Available;
-            Distance : Natural;
-            Valid : Boolean;
-            Ranging_Status : VL53L1X.Ranging_Status;
+            Measurement : VL53L1X.Measurement;
+            use all type VL53L1X.Ranging_Status;
          begin
             Wait_For_Data_Available (Breakout_Available);
             if Breakout_Available (On_Pimoroni) then
@@ -133,16 +118,17 @@ begin
 
                   Semihosting.Log_Line ("pimoroni: not ready");
                else
-                  VL53L1X.Get_Measurement
-                    (Pimoroni, Distance, Valid, Ranging_Status);
+                  Measurement := VL53L1X.Get_Measurement (Pimoroni);
 
                   VL53L1X.Clear_Interrupt (Pimoroni);
 
                   Semihosting.Log_Line
-                    ("pimoroni: distance:" & (if Valid
-                                    then Distance'Image
-                                    else " ---")
-                       & ", r.status: " & Ranging_Status'Image);
+                    ("pimoroni: distance:"
+                       & (if Measurement.Status = Ok then
+                             Measurement.Distance'Image
+                          else
+                             " ---")
+                       & ", status: " & Measurement.Status'Image);
                end if;
             end if;
             if Breakout_Available (On_Polulu) then
@@ -152,16 +138,17 @@ begin
 
                   Semihosting.Log_Line ("polulu: not ready");
                else
-                  VL53L1X.Get_Measurement
-                    (Polulu, Distance, Valid, Ranging_Status);
+                  Measurement := VL53L1X.Get_Measurement (Polulu);
 
                   VL53L1X.Clear_Interrupt (Polulu);
 
                   Semihosting.Log_Line
-                    ("polulu: distance:" & (if Valid
-                                            then Distance'Image
-                                            else " ---")
-                       & ", r.status: " & Ranging_Status'Image);
+                    ("polulu: distance:"
+                       & (if Measurement.Status = Ok then
+                             Measurement.Distance'Image
+                          else
+                             " ---")
+                       & ", status: " & Measurement.Status'Image);
                end if;
             end if;
          end;

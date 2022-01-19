@@ -360,9 +360,7 @@ package body VL53L1X is
 
       --  Discard the first measurement.
       Start_Ranging (This);
-      loop
-         exit when Is_Measurement_Ready (This);
-      end loop;
+      Wait_For_Measurement (This);
       Clear_Interrupt (This);
       Stop_Ranging (This);
 
@@ -379,20 +377,19 @@ package body VL53L1X is
    -- Get_Distance_Mode --
    -----------------------
 
-   procedure Get_Distance_Mode
-     (This : in out VL53L1X_Ranging_Sensor;
-      Mode :    out Distance_Mode)
+   function Get_Distance_Mode
+     (This : in out VL53L1X_Ranging_Sensor) return Distance_Mode
    is
       Buffer : HAL.I2C.I2C_Data (1 .. 1);
    begin
       Read (This,
             Index => PHASECAL_CONFIG_TIMEOUT_MACROP,
             Data  => Buffer);
-      Mode := (case Buffer (1) is
-                  when 16#14# => Short,
-                  when 16#0a# => Long,
-                  when others =>
-                     raise VL53L1X_Error with "invalid distance mode value");
+      return (case Buffer (1) is
+                 when 16#14# => Short,
+                 when 16#0a# => Long,
+                 when others =>
+                    raise VL53L1X_Error with "invalid distance mode value");
    end Get_Distance_Mode;
 
    -----------------------
@@ -403,159 +400,186 @@ package body VL53L1X is
      (This : in out VL53L1X_Ranging_Sensor;
       Mode :        Distance_Mode := Long)
    is
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
+      Budget : constant Measurement_Budget := Get_Measurement_Budget (This);
    begin
-      Dummy := VL53L1X_api_h.VL53L1X_SetDistanceMode
-        (dev          => This.Dev,
-         DistanceMode => (case Mode is
-                             when Short => 1,
-                             when Long  => 2));
+      case Mode is
+         when Short =>
+            Write (This,
+                   Index => PHASECAL_CONFIG_TIMEOUT_MACROP,
+                   Data  => (1 => 16#14#));
+            Write (This,
+                   Index => RANGE_CONFIG_VCSEL_PERIOD_A,
+                   Data  => (1 => 16#07#));
+            Write (This,
+                   Index => RANGE_CONFIG_VCSEL_PERIOD_B,
+                   Data  => (1 => 16#05#));
+            Write (This,
+                   Index => RANGE_CONFIG_VALID_PHASE_HIGH,
+                   Data  => (1 => 16#38#));
+            Write (This,
+                   Index => SD_CONFIG_WOI_SD0,
+                   Data  => HAL.UInt16'(16#0705#));
+            Write (This,
+                   Index => SD_CONFIG_INITIAL_PHASE_SD0,
+                   Data => HAL.UInt16'(16#0606#));
+         when Long =>
+            Write (This,
+                   Index => PHASECAL_CONFIG_TIMEOUT_MACROP,
+                   Data  => (1 => 16#0a#));
+            Write (This,
+                   Index => RANGE_CONFIG_VCSEL_PERIOD_A,
+                   Data  => (1 => 16#0f#));
+            Write (This,
+                   Index => RANGE_CONFIG_VCSEL_PERIOD_B,
+                   Data  => (1 => 16#0d#));
+            Write (This,
+                   Index => RANGE_CONFIG_VALID_PHASE_HIGH,
+                   Data  => (1 => 16#b8#));
+            Write (This,
+                   Index => SD_CONFIG_WOI_SD0,
+                   Data  => HAL.UInt16'(16#0f0d#));
+            Write (This,
+                   Index => SD_CONFIG_INITIAL_PHASE_SD0,
+                   Data => HAL.UInt16'(16#0e0e#));
+      end case;
+      Set_Measurement_Budget (This, Budget);
    end Set_Distance_Mode;
 
-   -----------------
-   -- Get_Timings --
-   -----------------
+   --------------------------------
+   -- Get_Inter_Measurement_Time --
+   --------------------------------
 
-   procedure Get_Timings
-     (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :    out Measurement_Budget;
-      Between_Measurements_Ms :    out Natural)
+   function Get_Inter_Measurement_Time
+     (This : in out VL53L1X_Ranging_Sensor) return Milliseconds
    is
+      Tmp          : HAL.UInt32;
+      Raw_Interval : Float;
+      Clock_PLL    : HAL.UInt16;
+      use all type HAL.UInt16;
    begin
-      GetTimingBudgetInMs :
-      declare
-         Raw : HAL.UInt16;
-      begin
-         Read (This,
-               Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
-               Data  => Raw);
-         case Raw is
-            when 16#001d# =>
-               Measurement_Budget_Ms := 15;
-            when 16#0051# | 16#001e# =>
-               Measurement_Budget_Ms := 20;
-            when 16#00d6# | 16#0060# =>
-               Measurement_Budget_Ms := 33;
-            when 16#01ae# | 16#00ad# =>
-               Measurement_Budget_Ms := 50;
-            when 16#02e1# | 16#01cc# =>
-               Measurement_Budget_Ms := 100;
-            when 16#03e1# | 16#02d9# =>
-               Measurement_Budget_Ms := 200;
-            when 16#0591# | 16#048f# =>
-               Measurement_Budget_Ms := 500;
-            when others =>
-               raise VL53L1X_Error
-                 with "invalid measurement budget" & Raw'Image;
-         end case;
-      end GetTimingBudgetInMs;
+      Read (This,
+            Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
+            Data  => Tmp);
+      Raw_Interval := Float (Tmp);
+      Read (This,
+            Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
+            Data  => Clock_PLL);
+      return Natural (Raw_Interval / (Float (Clock_PLL and 16#03ff#) * 1.065));
+      --  XXX that's 1.075 in Set.
+   end Get_Inter_Measurement_Time;
 
-      GetInterMeasurementInMs :
-      declare
-         Tmp          : HAL.UInt32;
-         Raw_Interval : Float;
-         Clock_PLL    : HAL.UInt16;
-         use all type HAL.UInt16;
-      begin
-         Read (This,
-               Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
-               Data  => Tmp);
-         Raw_Interval := Float (Tmp);
-         Read (This,
-               Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
-               Data  => Clock_PLL);
-         Between_Measurements_Ms :=
-           Natural (Raw_Interval / (Float (Clock_PLL and 16#03ff#) * 1.065));
-      end GetInterMeasurementInMs;
-   end Get_Timings;
+   ----------------------------
+   -- Get_Measurement_Budget --
+   ----------------------------
 
-   -----------------
-   -- Set_Timings --
-   -----------------
-
-   procedure Set_Timings
-     (This                    : in out VL53L1X_Ranging_Sensor;
-      Measurement_Budget_Ms   :        Measurement_Budget := 100;
-      Between_Measurements_Ms :        Natural := 100)
+   function Get_Measurement_Budget
+     (This : in out VL53L1X_Ranging_Sensor) return Measurement_Budget
    is
+      Raw : HAL.UInt16;
    begin
-      SetTimingBudgetInMs :
-      declare
-         Mode : Distance_Mode;
-         --  The next two declarations make it easier to implement the
-         --  limitation that the measurement budget can't be 15 in
-         --  Long distance mode.
-         subtype Measurement_Budget_For_Long
-           is Measurement_Budget range 20 .. 500;
-         Long_Measurement_Budget_Ms : constant Measurement_Budget_For_Long
-           := Measurement_Budget_For_Long (Measurement_Budget_Ms);
-      begin
-         Get_Distance_Mode (This, Mode);
-         case Mode is
-            when Short =>
-               Write (This,
-                      Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
-                      Data  =>
-                        HAL.UInt16'(case Measurement_Budget_Ms is
-                                       when 15 => 16#001d#,
-                                       when 20 => 16#0051#,
-                                       when 33 => 16#00d6#,
-                                       when 50 => 16#01ae#,
-                                       when 100 => 16#02e1#,
-                                       when 200 => 16#03e1#,
-                                       when 500 => 16#0591#));
-               Write (This,
-                      Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
-                      Data  =>
-                        HAL.UInt16'(case Measurement_Budget_Ms is
-                                       when 15 => 16#0027#,
-                                       when 20 => 16#006e#,
-                                       when 33 => 16#006e#,
-                                       when 50 => 16#01e8#,
-                                       when 100 => 16#0388#,
-                                       when 200 => 16#0496#,
-                                       when 500 => 16#05c1#));
-            when Long =>
-               Write (This,
-                      Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
-                      Data  =>
-                        HAL.UInt16'(case Long_Measurement_Budget_Ms is
-                                       when 20 => 16#001e#,
-                                       when 33 => 16#0060#,
-                                       when 50 => 16#00ad#,
-                                       when 100 => 16#01cc#,
-                                       when 200 => 16#02d9#,
-                                       when 500 => 16#048f#));
-               Write (This,
-                      Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
-                      Data  =>
-                        HAL.UInt16'(case Long_Measurement_Budget_Ms is
-                                       when 20 => 16#0022#,
-                                       when 33 => 16#006e#,
-                                       when 50 => 16#00c6#,
-                                       when 100 => 16#01ea#,
-                                       when 200 => 16#02f8#,
-                                       when 500 => 16#04a4#));
-         end case;
-      end SetTimingBudgetInMs;
-      SetInterMeasurementInMs :
-      declare
-         Clock_PLL : HAL.UInt16;
-         Raw_Interval : HAL.UInt32;
-         use all type HAL.UInt16;
-      begin
-         Read (This,
-               Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
-               Data  => Clock_PLL);
-         Raw_Interval :=
-           HAL.UInt32 (Float (Clock_PLL and 16#03ff#)
-                         * Float (Between_Measurements_Ms)
-                         * 1.075);  -- XXX in Get, the factor is 1.065
-         Write (This,
-                Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
-                Data  => Raw_Interval);
-      end SetInterMeasurementInMs;
-   end Set_Timings;
+      Read (This,
+            Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+            Data  => Raw);
+      return (case Raw is
+                 when 16#001d#            => 15,
+                 when 16#0051# | 16#001e# => 20,
+                 when 16#00d6# | 16#0060# => 33,
+                 when 16#01ae# | 16#00ad# => 50,
+                 when 16#02e1# | 16#01cc# => 100,
+                 when 16#03e1# | 16#02d9# => 200,
+                 when 16#0591# | 16#048f# => 500,
+                 when others =>
+                    raise VL53L1X_Error
+                        with "invalid measurement budget" & Raw'Image);
+   end Get_Measurement_Budget;
+
+   --------------------------------
+   -- Set_Inter_Measurement_Time --
+   --------------------------------
+
+   procedure Set_Inter_Measurement_Time
+     (This     : in out VL53L1X_Ranging_Sensor;
+      Interval :        Milliseconds)
+   is
+      Clock_PLL : HAL.UInt16;
+      Raw_Interval : HAL.UInt32;
+      use all type HAL.UInt16;
+   begin
+      Read (This,
+            Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
+            Data  => Clock_PLL);
+      Raw_Interval :=
+        HAL.UInt32 (Float (Clock_PLL and 16#03ff#)
+                      * Float (Interval)
+                      * 1.075);  -- XXX in Get, the factor is 1.065
+      Write (This,
+             Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
+             Data  => Raw_Interval);
+   end Set_Inter_Measurement_Time;
+
+   ----------------------------
+   -- Set_Measurement_Budget --
+   ----------------------------
+
+   procedure Set_Measurement_Budget
+     (This   : in out VL53L1X_Ranging_Sensor;
+      Budget :        Measurement_Budget := 100)
+   is
+      --  The next two declarations make it easier to implement the
+      --  limitation that the measurement budget can't be 15 in
+      --  Long distance mode.
+      subtype Measurement_Budget_For_Long
+        is Measurement_Budget range 20 .. 500;
+      Long_Measurement_Budget_Ms : constant Measurement_Budget_For_Long
+        := Measurement_Budget_For_Long (Budget);
+   begin
+      case Get_Distance_Mode (This) is
+         when Short =>
+            Write (This,
+                   Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+                   Data  =>
+                     HAL.UInt16'(case Budget is
+                                    when 15  => 16#001d#,
+                                    when 20  => 16#0051#,
+                                    when 33  => 16#00d6#,
+                                    when 50  => 16#01ae#,
+                                    when 100 => 16#02e1#,
+                                    when 200 => 16#03e1#,
+                                    when 500 => 16#0591#));
+            Write (This,
+                   Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
+                   Data  =>
+                     HAL.UInt16'(case Budget is
+                                    when 15  => 16#0027#,
+                                    when 20  => 16#006e#,
+                                    when 33  => 16#006e#,
+                                    when 50  => 16#01e8#,
+                                    when 100 => 16#0388#,
+                                    when 200 => 16#0496#,
+                                    when 500 => 16#05c1#));
+         when Long =>
+            Write (This,
+                   Index => RANGE_CONFIG_TIMEOUT_MACROP_A_HI,
+                   Data  =>
+                     HAL.UInt16'(case Long_Measurement_Budget_Ms is
+                                    when 20  => 16#001e#,
+                                    when 33  => 16#0060#,
+                                    when 50  => 16#00ad#,
+                                    when 100 => 16#01cc#,
+                                    when 200 => 16#02d9#,
+                                    when 500 => 16#048f#));
+            Write (This,
+                   Index => RANGE_CONFIG_TIMEOUT_MACROP_B_HI,
+                   Data  =>
+                     HAL.UInt16'(case Long_Measurement_Budget_Ms is
+                                    when 20  => 16#0022#,
+                                    when 33  => 16#006e#,
+                                    when 50  => 16#00c6#,
+                                    when 100 => 16#01ea#,
+                                    when 200 => 16#02f8#,
+                                    when 500 => 16#04a4#));
+      end case;
+   end Set_Measurement_Budget;
 
    -------------------
    -- Start_Ranging --
@@ -616,14 +640,12 @@ package body VL53L1X is
    -- Get_Measurement --
    ---------------------
 
-   procedure Get_Measurement
-     (This        : in out VL53L1X_Ranging_Sensor;
-      Distance_Mm :    out Natural;
-      Valid       :    out Boolean;
-      Status      :    out Ranging_Status)
+   function Get_Measurement
+     (This : in out VL53L1X_Ranging_Sensor) return Measurement
    is
       Buffer : HAL.I2C.I2C_Data (0 .. 16);
       use all type HAL.UInt8;
+      Status : Ranging_Status;
    begin
       Read (This,
             Index => VL53L1_RESULT_RANGE_STATUS,
@@ -639,11 +661,12 @@ package body VL53L1X is
                     when others => raise VL53L1X_Error
                            with "invalid status " & Buffer (0)'Image);
 
-      Valid := Status = Ok;
-
-      if Valid then
-         Distance_Mm := Natural (HAL.UInt16'(From_Device (Buffer (13 .. 14))));
-      end if;
+      return Result : Measurement (Status => Status) do
+         if Status = Ok then
+            Result.Distance :=
+              Millimetres (HAL.UInt16'(From_Device (Buffer (13 .. 14))));
+         end if;
+      end return;
    end Get_Measurement;
 
    -------------------------------
