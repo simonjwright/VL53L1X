@@ -1,6 +1,6 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                     Copyright (C) 2021 AdaCore                           --
+--          Copyright (C) 2022, Simon Wright <simon@pushface.org>           --
 --                                                                          --
 --  Redistribution and use in source and binary forms, with or without      --
 --  modification, are permitted provided that the following conditions are  --
@@ -34,9 +34,6 @@
 
 with HAL.I2C;
 with HAL.Time;
-with System;
-
-private with vl53l1_platform_h;
 
 package VL53L1X is
 
@@ -193,9 +190,6 @@ private
 
          --  Default address: can be changed by software
          I2C_Address : HAL.I2C.I2C_Address := 16#52#;
-
-         --  For use by the C interface; set up in Boot_Device
-         Dev : vl53l1_platform_h.VL53L1_DEV;
       end record;
 
    function Is_Booted (This : VL53L1X_Ranging_Sensor) return Boolean

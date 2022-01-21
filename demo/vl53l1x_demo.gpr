@@ -23,7 +23,7 @@ project VL53L1X_Demo extends "../runtime.gpr" is
       end case;
       for Default_Switches ("ada") use
         Compiler'Default_Switches ("ada")
-        & ("-gnatQ", "-gnatyg", "-gnata", "-gnatwa", "-gnatw.X")
+        & ("-gnatQ", "-gnaty", "-gnata", "-gnatwa", "-gnatw.X")
         & ("-ffunction-sections", "-fdata-sections", "-g");
    end Compiler;
 

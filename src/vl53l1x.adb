@@ -1,6 +1,6 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                    Copyright (C) 2021, AdaCore                           --
+--          Copyright (C) 2022, Simon Wright <simon@pushface.org>           --
 --                                                                          --
 --  Redistribution and use in source and binary forms, with or without      --
 --  modification, are permitted provided that the following conditions are  --
@@ -34,20 +34,15 @@
 ------------------------------------------------------------------------------
 
 with Ada.Unchecked_Conversion;
-with Interfaces.C.Pointers;
+with System;
 
 with HAL;
-
-with VL53L1X_api_h;
-with sys_ustdint_h;
-
---  exploratory stuff
-with Interfaces.C;
 
 package body VL53L1X is
 
    package Registers is
       pragma Style_Checks (Off);
+      pragma Warnings (Off, "is not referenced");
 
       --  These values are copied from those derived from vl53l1x_api.h,
       --  except that the encoding of the C double-underscore as "_u_"
@@ -100,6 +95,7 @@ package body VL53L1X is
       VL53L1_IDENTIFICATION_MODEL_ID : constant := 16#010F#;
       VL53L1_ROI_CONFIG_MODE_ROI_CENTRE_SPAD : constant := 16#013E#;
 
+      pragma Warnings (On, "is not referenced");
       pragma Style_Checks (On);
    end Registers;
    use Registers;
@@ -145,15 +141,6 @@ package body VL53L1X is
    function To_Device (Value : HAL.UInt32) return Four_Byte_Array;
    function From_Device (Value : Four_Byte_Array) return HAL.UInt32;
 
-   --  In all cases (aside from e.g. VL53L1X_SetDistanceMode(), where
-   --  it's an out-of-bounds error that won't happen in Ada) the
-   --  return value of the API function merely indicates an I2C
-   --  error. I'm going to raise exceptions for I2C errors (on the
-   --  grounds that I have no idea how one would recover from them).
-   --
-   --  I'm retaining the low-level (I2C) status because the API
-   --  functions use it.
-
    -----------------
    -- Boot_Device --
    -----------------
@@ -163,18 +150,9 @@ package body VL53L1X is
       Loop_Interval_Ms :        Positive := 10;
       Status           :    out Boot_Status)
    is
-      function Convert is new Ada.Unchecked_Conversion
-        (System.Address, vl53l1_platform_h.VL53L1_DEV);
-      State : aliased sys_ustdint_h.uint8_t := 0;
-      use type sys_ustdint_h.uint8_t;
-      Dummy : VL53L1X_api_h.VL53L1X_ERROR;
       I2C_Status : HAL.I2C.I2C_Status;
       use all type HAL.I2C.I2C_Status;
    begin
-      --  The C code thinks that VL53L1_DEV is a pointer to <something>,
-      --  but it never tries to access any component of it.
-      This.Dev := Convert (This'Address);
-
       --  Allow the VL53L1X to do its internal initialization.
       This.Timing.Delay_Milliseconds (100);
 
@@ -864,335 +842,5 @@ package body VL53L1X is
                              4 => Value (1)));
       end case;
    end From_Device;
-
-   --  These are low-level comms routines used in vl53l1_platform.h.
-   --  The idea is that the C code can call these.
-   --  The specs here are created from the those generated from the C
-   --  vl53l1_platform.h in vl53l1_platform_h.ads by replacing
-   --  'dev : VL53L1_DEV' by 'dev : in out VL53L1X_Ranging_Sensor'
-   --  and 'with Import' by 'with Export'.
-   --  To be deleted when we've replaced all the C code!!
-
-   pragma Style_Checks (Off);
-
-   function VL53L1_WriteMulti
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Pdata : access HAL.UInt8;
-      Count : HAL.UInt32) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:25
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_WriteMulti";
-
-   function VL53L1_ReadMulti
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Pdata : access HAL.UInt8;
-      Count : HAL.UInt32) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:33
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_ReadMulti";
-
-   function VL53L1_WrByte
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Data : HAL.UInt8) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:41
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_WrByte";
-
-   function VL53L1_WrWord
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Data : HAL.UInt16) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:48
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_WrWord";
-
-   function VL53L1_WrDWord
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Data : HAL.UInt32) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:55
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_WrDWord";
-
-   function VL53L1_RdByte
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Pdata : access HAL.UInt8) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:62
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_RdByte";
-
-   function VL53L1_RdWord
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Pdata : access HAL.UInt16) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:69
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_RdWord";
-
-   function VL53L1_RdDWord
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Index : HAL.UInt16;
-      Pdata : access HAL.UInt32) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:76
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_RdDWord";
-
-   function VL53L1_WaitMs
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Wait_Ms : Interfaces.Integer_32) return Interfaces.Integer_8  -- ../platform/vl53l1_platform.h:83
-   with Export => True,
-     Convention => C,
-     External_Name => "VL53L1_WaitMs";
-
-   pragma Style_Checks (On);
-
-   type UInt8_Array is array (Natural range <>) of aliased HAL.UInt8;
-
-   package C_Pointers is new Interfaces.C.Pointers
-     (Index              => Natural,
-      Element            => HAL.UInt8,
-      Element_Array      => UInt8_Array,
-      Default_Terminator => 0);
-
-   -----------------------
-   -- VL53L1_WriteMulti --
-   -----------------------
-
-   function VL53L1_WriteMulti
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Pdata : access HAL.UInt8;
-      Count :        HAL.UInt32)
-     return Interfaces.Integer_8
-   is
-      Data_P : C_Pointers.Pointer := C_Pointers.Pointer (Pdata);
-      Buffer : HAL.UInt8_Array (1 .. Natural (Count) + 2);
-      Ret : HAL.I2C.I2C_Status;
-      use all type HAL.UInt16;
-   begin
-      Buffer (1) := HAL.UInt8 (Shift_Right (Index, 8));
-      Buffer (2) := HAL.UInt8 (Index and 16#ff#);
-      for J in 3 .. Buffer'Last loop
-         Buffer (J) := Data_P.all;
-         C_Pointers.Increment (Data_P);
-      end loop;
-      HAL.I2C.Master_Transmit
-        (This    => Dev.Port.all,
-         Addr    => Dev.I2C_Address,
-         Data    => HAL.UInt8_Array (Buffer),
-         Status  => Ret);
-      case Ret is
-         when HAL.I2C.Ok =>
-            return 0;
-         when others =>
-            return raise VL53L1X_Error with "I2C Write error: " & Ret'Image;
-      end case;
-   end VL53L1_WriteMulti;
-
-   ----------------------
-   -- VL53L1_ReadMulti --
-   ----------------------
-
-   function VL53L1_ReadMulti
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Pdata : access HAL.UInt8;
-      Count :        HAL.UInt32)
-     return Interfaces.Integer_8
-   is
-      Ret : HAL.I2C.I2C_Status;
-      use all type HAL.UInt16;
-      use all type HAL.I2C.I2C_Status;
-   begin
-      HAL.I2C.Master_Transmit
-        (This    => Dev.Port.all,
-         Addr    => Dev.I2C_Address,
-         Data    => (1 => HAL.UInt8 (Shift_Right (Index, 8)),
-                     2 => HAL.UInt8 (Index and 16#ff#)),
-         Status  => Ret);
-      if Ret = Ok then
-         Read_Buffer :
-         declare
-            Buffer : HAL.UInt8_Array (1 .. Natural (Count));
-            Data_P : C_Pointers.Pointer := C_Pointers.Pointer (Pdata);
-         begin
-            HAL.I2C.Master_Receive
-              (This    => Dev.Port.all,
-               Addr    => Dev.I2C_Address,
-               Data    => Buffer,
-               Status  => Ret);
-            if Ret = Ok then
-               for J in Buffer'Range loop
-                  Data_P.all := Buffer (J);
-                  C_Pointers.Increment (Data_P);
-               end loop;
-            end if;
-         end Read_Buffer;
-      end if;
-      case Ret is
-         when HAL.I2C.Ok =>
-            return 0;
-         when others =>
-            return raise VL53L1X_Error with "I2C Read error: " & Ret'Image;
-      end case;
-   end VL53L1_ReadMulti;
-
-   -------------------
-   -- VL53L1_WrByte --
-   -------------------
-
-   function VL53L1_WrByte
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Data  :        HAL.UInt8) return Interfaces.Integer_8
-   is
-      To_Transmit : aliased HAL.UInt8 := Data;
-   begin
-      return VL53L1_WriteMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => To_Transmit'Access,
-         Count => 1);
-   end VL53L1_WrByte;
-
-   -------------------
-   -- VL53L1_WrWord --
-   -------------------
-
-   function VL53L1_WrWord
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Data  :        HAL.UInt16) return Interfaces.Integer_8
-   is
-      --  Convert to big-endian.
-      subtype Two_Byte_Array is UInt8_Array (1 .. 2);
-      As_Bytes : Two_Byte_Array with Address => Data'Address;
-      To_Transmit : Two_Byte_Array := (1 => As_Bytes (2),
-                                       2 => As_Bytes (1));
-   begin
-      return VL53L1_WriteMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => To_Transmit (1)'Access,
-         Count => To_Transmit'Length);
-   end VL53L1_WrWord;
-
-   --------------------
-   -- VL53L1_WrDWord --
-   --------------------
-
-   function VL53L1_WrDWord
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Data  :        HAL.UInt32) return Interfaces.Integer_8
-   is
-      --  Convert to big-endian.
-      subtype Four_Byte_Array is UInt8_Array (1 .. 4);
-      As_Bytes : Four_Byte_Array with Address => Data'Address;
-      To_Transmit : Four_Byte_Array := (1 => As_Bytes (4),
-                                        2 => As_Bytes (3),
-                                        3 => As_Bytes (2),
-                                        4 => As_Bytes (1));
-   begin
-      return VL53L1_WriteMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => To_Transmit (1)'Access,
-         Count => To_Transmit'Length);
-   end VL53L1_WrDWord;
-
-   -------------------
-   -- VL53L1_RdByte --
-   -------------------
-
-   function VL53L1_RdByte
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Pdata : access HAL.UInt8) return Interfaces.Integer_8
-   is
-   begin
-      return VL53L1_ReadMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => Pdata,
-         Count => 1);
-   end VL53L1_RdByte;
-
-   -------------------
-   -- VL53L1_RdWord --
-   -------------------
-
-   function VL53L1_RdWord
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Pdata : access HAL.UInt16) return Interfaces.Integer_8
-   is
-      --  Convert from big-endian.
-      subtype Two_Byte_Array is UInt8_Array (0 .. 1);
-      --  Zero-based indexing for easy byte-reversal arithmetic.
-      As_Received : Two_Byte_Array;
-      As_Bytes : Two_Byte_Array with Address => Pdata.all'Address;
-      Data_P : C_Pointers.Pointer
-        := C_Pointers.Pointer'(As_Bytes (As_Bytes'First)'Unchecked_Access);
-      Status : Interfaces.Integer_8;
-   begin
-      Status := VL53L1_ReadMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => As_Received (0)'Access,
-         Count => As_Received'Length);
-      for J in As_Received'Range loop
-         As_Bytes (As_Bytes'Last - J) := As_Received (J);
-      end loop;
-      return Status;
-   end VL53L1_RdWord;
-
-   --------------------
-   -- VL53L1_RdDWord --
-   --------------------
-
-   function VL53L1_RdDWord
-     (Dev   : in out VL53L1X_Ranging_Sensor;
-      Index :        HAL.UInt16;
-      Pdata : access HAL.UInt32) return Interfaces.Integer_8
-   is
-      --  Convert from big-endian.
-      subtype Four_Byte_Array is UInt8_Array (0 .. 3);
-      --  Zero-based indexing for easy byte-reversal arithmetic.
-      As_Received : Four_Byte_Array;
-      As_Bytes : Four_Byte_Array with Address => Pdata.all'Address;
-      Data_P : C_Pointers.Pointer
-        := C_Pointers.Pointer'(As_Bytes (As_Bytes'First)'Unchecked_Access);
-      Status : Interfaces.Integer_8;
-   begin
-      Status := VL53L1_ReadMulti
-        (Dev   => Dev,
-         Index => Index,
-         Pdata => As_Received (0)'Access,
-         Count => As_Received'Length);
-      for J in As_Received'Range loop
-         As_Bytes (As_Bytes'Last - J) := As_Received (J);
-         C_Pointers.Increment (Data_P);
-      end loop;
-      return Status;
-   end VL53L1_RdDWord;
-
-   -------------------
-   -- VL53L1_WaitMs --
-   -------------------
-
-   function VL53L1_WaitMs
-     (Dev : in out VL53L1X_Ranging_Sensor;
-      Wait_Ms : Interfaces.Integer_32)
-     return Interfaces.Integer_8
-   is
-   begin
-      Dev.Timing.Delay_Milliseconds (Integer (Wait_Ms));
-      return 0;
-   end VL53L1_WaitMs;
 
 end VL53L1X;

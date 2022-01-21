@@ -2,7 +2,6 @@ with Semihosting;
 with Ada.Real_Time;
 
 with HAL.I2C;
-with Ravenscar_Time;
 
 with VL53L1X;
 

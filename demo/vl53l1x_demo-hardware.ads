@@ -1,7 +1,6 @@
 with STM32.Device;
 with STM32.GPIO;
 with STM32.I2C;
-with HAL.I2C;
 with Ravenscar_Time;
 
 with VL53L1X;

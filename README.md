@@ -1,6 +1,6 @@
 This is an Ada-language driver for the STMicroelectronics [VL53L1X](https://www.st.com/en/imaging-and-photonics-solutions/vl53l1x.html) ranging sensor.
 
-It's based on STMicroelectronics's STSW-IMG009 C-language driver, and initially includes that driver via an automatically-generated binding. The plan is to reduce the dependence on C in stages.
+It's based on STMicroelectronics's STSW-IMG009 C-language driver.
 
 ## Usage ##
 
@@ -23,11 +23,8 @@ Other controls provided are:
 * `Set_Device_Address` allows to change the I2C address from the default (`16#52#`). This is useful if you have more than one VL53L1X connected: disable all the devices' I2C communications by clearing their XSHUT pins, then enable them one-by-one setting distinct addresses.
   **N.B.** the device address remains as set until power is cycled!
 * `Set_Distance_Mode`: the choices are `Long` (default) and `Short`. `Short` mode has better ambient light immunity but the maximum distance measurable is limited to 1.3 m. `Long` distance mode ranges up to 4 m but is less performant under ambient light.
-* `Set_Timings`.
-  * `Measurement_Budget_Ms` (20 to 1_000 ms, default 100 ms) is the time allowed to make one measurement: longer times provide increased measurement precision at the expense of increased power consumption.
-  * `Between_Measurements_Ms` (no less than `Measurement_Budget_Ms`) is the interval between measurement initiations.
-
-Further controls are available to be implemented, in particular controlling the field of view (size and, possibly, offset).
+* `Set_Inter_Measurement_Time`: the inter-measurement period is the time between two ranging operations. Should be no shorter than the timing budget.
+* `Set_Measurement_Budget`: the timing budget is the time required by the sensor to make one distance measurement. The values permitted are 15 (only in `Short` distance mode), 20, 33, 50, 100, 200 or 500 ms.
 
 ## Exceptions ##
 
