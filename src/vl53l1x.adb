@@ -104,6 +104,9 @@ package body VL53L1X is
    end Registers;
    use Registers;
 
+   --  Scaling factor used in Get/Set_Inter_Measurement_Time.
+   PLL_Factor : constant := 1.0466;
+
    --  Low-level device access procedures.
 
    procedure Read (This  : in out VL53L1X_Ranging_Sensor;
@@ -464,8 +467,8 @@ package body VL53L1X is
       Read (This,
             Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
             Data  => Clock_PLL);
-      return Natural (Raw_Interval / (Float (Clock_PLL and 16#03ff#) * 1.065));
-      --  XXX that's 1.075 in Set.
+      return Natural (Raw_Interval
+                        / (Float (Clock_PLL and 16#03ff#) * PLL_Factor));
    end Get_Inter_Measurement_Time;
 
    ----------------------------
@@ -508,10 +511,9 @@ package body VL53L1X is
       Read (This,
             Index => VL53L1_RESULT_OSC_CALIBRATE_VAL,
             Data  => Clock_PLL);
-      Raw_Interval :=
-        HAL.UInt32 (Float (Clock_PLL and 16#03ff#)
-                      * Float (Interval)
-                      * 1.075);  -- XXX in Get, the factor is 1.065
+      Raw_Interval := HAL.UInt32 (Float (Clock_PLL and 16#03ff#)
+                                    * Float (Interval)
+                                    * PLL_Factor);
       Write (This,
              Index => VL53L1_SYSTEM_INTERMEASUREMENT_PERIOD,
              Data  => Raw_Interval);
